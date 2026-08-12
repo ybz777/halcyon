@@ -1,0 +1,124 @@
+openapi: 3.1.0
+info:
+  title: Halcyon Notifications API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8085
+paths:
+  /api/v1/notifications:
+    get:
+      summary: List notifications for authenticated user
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Notification page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionPage'
+        '400':
+          description: Invalid cursor or page size
+  /api/v1/notifications/unread-count:
+    get:
+      summary: Unread notification count
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Unread count
+  /api/v1/notifications/{id}:
+    get:
+      summary: Get notification
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Notification
+  /api/v1/notifications/{id}/read:
+    post:
+      summary: Mark notification read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Marked read
+  /api/v1/notifications/read-all:
+    post:
+      summary: Mark all notifications read
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Bulk read result
+  /api/v1/notification-preferences:
+    get:
+      summary: List notification preferences
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Preferences page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionPage'
+        '400':
+          description: Invalid cursor or page size
+  /api/v1/notification-preferences/{notification_type}:
+    put:
+      summary: Update notification preference
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: notification_type
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, enabled]
+              properties:
+                channel: { type: string, enum: [IN_APP, EMAIL] }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: Updated preference
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    CollectionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean

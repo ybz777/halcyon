@@ -1,0 +1,19 @@
+go 1.25.0
+
+use (
+	./cmd/event-topics
+	./cmd/organization-consumer
+	./cmd/outbox-relay
+	./pkg/platform
+	./services/auth
+	./services/gateway
+	./services/organization
+	./services/workflow
+	./services/audit
+	./services/integrations
+	./services/notifications
+	./services/jobs
+	./tests/integration
+	./tests/security
+	./tests/e2e
+)

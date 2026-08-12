@@ -1,0 +1,474 @@
+x-http-health: &http-health
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: halcyon-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-halcyon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-halcyon}
+      POSTGRES_DB: ${POSTGRES_DB:-halcyon}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-halcyon}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: halcyon-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.4
+    container_name: halcyon-redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  auth:
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    container_name: halcyon-auth
+    environment:
+      AUTH_PORT: "8080"
+      SERVICE_NAME: auth
+      DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon?sslmode=disable
+      DATABASE_MIGRATE: "true"
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8080/api/v1/health"]
+
+  organization:
+    build:
+      context: ../..
+      dockerfile: services/organization/Dockerfile
+    container_name: halcyon-organization
+    environment:
+      ORGANIZATION_PORT: "8081"
+      SERVICE_NAME: organization
+      ORGANIZATION_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_organization?sslmode=disable
+      ORGANIZATION_DATABASE_MIGRATE: "true"
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8081/api/v1/health"]
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    container_name: halcyon-gateway
+    environment:
+      GATEWAY_PORT: "8088"
+      SERVICE_NAME: gateway
+      AUTH_SERVICE_URL: http://auth:8080
+      ORG_SERVICE_URL: http://organization:8081
+      AUDIT_SERVICE_URL: http://audit:8083
+      INTEGRATIONS_SERVICE_URL: http://integrations:8084
+      NOTIFICATIONS_SERVICE_URL: http://notifications:8085
+      JOBS_SERVICE_URL: http://jobs:8086
+      KAFKA_BROKERS: redpanda:9092
+      JWT_ISSUER: auth
+      REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_FAIL_CLOSED: "true"
+      SERVICE_PRIVATE_KEY: ${SERVICE_PRIVATE_KEY}
+      SERVICE_KEY_ID: gateway-1
+      SERVICE_TOKEN_AUDIENCE: halcyon-internal
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8088:8088"
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      organization:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8088/api/v1/health"]
+
+  workflow:
+    build:
+      context: ../..
+      dockerfile: services/workflow/Dockerfile
+    container_name: halcyon-workflow
+    environment:
+      WORKFLOW_PORT: "8082"
+      SERVICE_NAME: workflow
+      WORKFLOW_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_workflow?sslmode=disable
+      WORKFLOW_DATABASE_MIGRATE: "true"
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8082/api/v1/health"]
+
+  workflow-worker:
+    build:
+      context: ../..
+      dockerfile: services/workflow/Dockerfile
+    container_name: halcyon-workflow-worker
+    entrypoint: ["/workflow-worker"]
+    environment:
+      WORKFLOW_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_workflow?sslmode=disable
+      WORKFLOW_DATABASE_MIGRATE: "true"
+      JOB_LEASE_DURATION: 30s
+      MAX_CONCURRENT_JOBS: "4"
+      WORKER_ID: workflow-worker-1
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      workflow:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  audit:
+    build:
+      context: ../..
+      dockerfile: services/audit/Dockerfile
+    container_name: halcyon-audit
+    environment:
+      AUDIT_PORT: "8083"
+      SERVICE_NAME: audit
+      AUDIT_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_audit?sslmode=disable
+      AUDIT_DATABASE_MIGRATE: "true"
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      AUDIT_RETENTION_DAYS: "365"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8083/api/v1/health"]
+
+  audit-consumer:
+    build:
+      context: ../..
+      dockerfile: services/audit/Dockerfile
+    container_name: halcyon-audit-consumer
+    entrypoint: ["/audit-consumer"]
+    environment:
+      AUDIT_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_audit?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_CONSUMER_GROUP: audit-log-consumer
+      CONSUMER_CONCURRENCY: "4"
+      AUDIT_RETENTION_DAYS: "365"
+      EVENT_DLQ_ENABLED: "true"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      audit:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  integrations:
+    build:
+      context: ../..
+      dockerfile: services/integrations/Dockerfile
+    container_name: halcyon-integrations
+    environment:
+      INTEGRATIONS_PORT: "8084"
+      SERVICE_NAME: integrations
+      INTEGRATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_integrations?sslmode=disable
+      INTEGRATIONS_DATABASE_MIGRATE: "true"
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-change-me-integrations-encryption-key-32b}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      REDIS_URL: redis://redis:6379/0
+      WEBHOOK_ALLOW_HTTP: "true"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8084/api/v1/health"]
+
+  webhook-dispatcher:
+    build:
+      context: ../..
+      dockerfile: services/integrations/Dockerfile
+    container_name: halcyon-webhook-dispatcher
+    entrypoint: ["/webhook-dispatcher"]
+    environment:
+      INTEGRATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_integrations?sslmode=disable
+      JOBS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_jobs?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      CONSUMER_CONCURRENCY: "4"
+      EVENT_DLQ_ENABLED: "true"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      integrations:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  jobs:
+    build:
+      context: ../..
+      dockerfile: services/jobs/Dockerfile
+    container_name: halcyon-jobs
+    environment:
+      JOBS_PORT: "8086"
+      SERVICE_NAME: jobs
+      JOBS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_jobs?sslmode=disable
+      JOBS_DATABASE_MIGRATE: "true"
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8086/api/v1/health"]
+
+  job-worker:
+    build:
+      context: ../..
+      dockerfile: services/jobs/Dockerfile
+    container_name: halcyon-job-worker
+    entrypoint: ["/job-worker"]
+    environment:
+      JOBS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_jobs?sslmode=disable
+      JOBS_DATABASE_MIGRATE: "true"
+      INTEGRATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_integrations?sslmode=disable
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-change-me-integrations-encryption-key-32b}
+      NOTIFICATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_notifications?sslmode=disable
+      WEBHOOK_ALLOW_HTTP: "true"
+      EMAIL_PROVIDER: log
+      JOB_MAX_CONCURRENT: "8"
+      WORKER_ID: job-worker-1
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jobs:
+        condition: service_healthy
+      integrations:
+        condition: service_healthy
+      notifications:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  webhook-worker:
+    profiles: ["legacy-workers"]
+    build:
+      context: ../..
+      dockerfile: services/integrations/Dockerfile
+    container_name: halcyon-webhook-worker
+    entrypoint: ["/webhook-worker"]
+    environment:
+      INTEGRATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_integrations?sslmode=disable
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-change-me-integrations-encryption-key-32b}
+      WEBHOOK_ALLOW_HTTP: "true"
+      MAX_CONCURRENT_DELIVERIES: "8"
+      WORKER_ID: webhook-worker-1
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      integrations:
+        condition: service_started
+
+  notifications:
+    build:
+      context: ../..
+      dockerfile: services/notifications/Dockerfile
+    container_name: halcyon-notifications
+    environment:
+      NOTIFICATIONS_PORT: "8085"
+      SERVICE_NAME: notifications
+      NOTIFICATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_notifications?sslmode=disable
+      NOTIFICATIONS_DATABASE_MIGRATE: "true"
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secret-with-at-least-32-characters}
+      AUTH_SERVICE_NAME: auth
+      EMAIL_PROVIDER: log
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "/httpprobe", "http://127.0.0.1:8085/api/v1/health"]
+
+  notification-dispatcher:
+    build:
+      context: ../..
+      dockerfile: services/notifications/Dockerfile
+    container_name: halcyon-notification-dispatcher
+    entrypoint: ["/notification-dispatcher"]
+    environment:
+      NOTIFICATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_notifications?sslmode=disable
+      JOBS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_jobs?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      CONSUMER_CONCURRENCY: "4"
+      EVENT_DLQ_ENABLED: "true"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      notifications:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  email-worker:
+    profiles: ["legacy-workers"]
+    build:
+      context: ../..
+      dockerfile: services/notifications/Dockerfile
+    container_name: halcyon-email-worker
+    entrypoint: ["/email-worker"]
+    environment:
+      NOTIFICATIONS_DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon_notifications?sslmode=disable
+      EMAIL_PROVIDER: log
+      MAX_CONCURRENT_EMAILS: "8"
+      WORKER_ID: email-worker-1
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      notifications:
+        condition: service_started
+
+  outbox-relay:
+    build:
+      context: ../..
+      dockerfile: cmd/outbox-relay/Dockerfile
+    container_name: halcyon-outbox-relay
+    environment:
+      DATABASE_URL: postgres://halcyon:halcyon@postgres:5432/halcyon?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_CLIENT_ID: outbox-relay
+      OUTBOX_POLL_INTERVAL: 1s
+      OUTBOX_BATCH_SIZE: "100"
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.111.0
+    container_name: halcyon-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"
+    profiles:
+      - observability
+
+volumes:
+  postgres_data:
+  redis_data:

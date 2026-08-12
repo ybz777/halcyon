@@ -1,0 +1,578 @@
+openapi: 3.1.0
+info:
+  title: Halcyon Auth Service API
+  version: 1.0.0
+  description: Identity and access management for Halcyon.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      description: Returns 200 when the process is running.
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/ready:
+    get:
+      operationId: getReady
+      summary: Readiness probe
+      description: Returns dependency check status.
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service readiness with explicit dependency checks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics
+      description: Prometheus exposition format. Unversioned per platform convention.
+      tags:
+        - Observability
+      responses:
+        "200":
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: Authenticate with email and password
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            examples:
+              valid:
+                summary: Valid login
+                value:
+                  email: user@example.com
+                  password: PlainPassword123!
+      responses:
+        "200":
+          description: Token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+              examples:
+                success:
+                  value:
+                    accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    refreshToken: dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...
+                    expiresIn: 900
+                    tokenType: Bearer
+        "400":
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Invalid credentials
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                invalidCredentials:
+                  value:
+                    type: https://halcyon.io/problems/unauthorized
+                    title: Unauthorized
+                    status: 401
+                    detail: invalid email or password
+        "500":
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      summary: Rotate refresh token
+      description: |
+        Exchanges a valid refresh token for a new access/refresh token pair.
+        Each refresh token is single-use. On successful refresh the presented
+        token is marked consumed and a new token in the same family is issued.
+        Reusing a consumed refresh token is treated as token theft and revokes
+        the entire token family.
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            examples:
+              valid:
+                value:
+                  refreshToken: dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...
+      responses:
+        "200":
+          description: Rotated token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Invalid, expired, or reused refresh token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                invalid:
+                  summary: Invalid or expired token
+                  value:
+                    type: https://halcyon.io/problems/unauthorized
+                    title: Unauthorized
+                    status: 401
+                    detail: invalid or expired token
+                replay:
+                  summary: Refresh token reuse detected
+                  value:
+                    type: https://halcyon.io/problems/unauthorized
+                    title: Refresh Token Reuse Detected
+                    status: 401
+                    detail: refresh token reuse detected; token family revoked
+        "500":
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/auth/api-keys:
+    post:
+      operationId: createAPIKey
+      summary: Create API key
+      description: Issues a new API key and returns the plaintext secret once.
+      tags:
+        - API Keys
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+            examples:
+              live:
+                value:
+                  name: CI/CD Deploy Key
+                  serviceAccountId: svc_example1234567890
+                  organizationId: org_example123
+                  scopes: [users.read, incidents.write]
+                  environment: live
+      responses:
+        "201":
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAPIKeyResponse"
+        "400":
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    get:
+      operationId: listAPIKeys
+      summary: List API keys
+      description: Returns API key metadata without secrets.
+      tags:
+        - API Keys
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serviceAccountId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: API key metadata page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyCollection"
+        "400":
+          description: Invalid cursor or page size
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/auth/api-keys/{id}:
+    delete:
+      operationId: revokeAPIKey
+      summary: Revoke API key
+      tags:
+        - API Keys
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: API key revoked
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/auth/api-keys/{id}/rotate:
+    post:
+      operationId: rotateAPIKey
+      summary: Rotate API key
+      description: Revokes the existing key and issues a replacement. Plaintext returned once.
+      tags:
+        - API Keys
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [live, test]
+      responses:
+        "200":
+          description: Rotated API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAPIKeyResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke refresh token
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Token revoked
+  /api/v1/auth/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get authenticated user profile
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key authentication using hal_live_ or hal_test_ prefixed keys. Bearer scheme also supported.
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          example: auth
+    ReadyResponse:
+      type: object
+      required:
+        - status
+        - service
+        - checks
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        service:
+          type: string
+          example: auth
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            database: ok
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: PlainPassword123!
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          example: dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...
+    LogoutRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+    TokenResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          example: 900
+    MeResponse:
+      type: object
+      required: [id, email, roles, permissions]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+    CreateAPIKeyRequest:
+      type: object
+      required: [name, serviceAccountId, scopes, environment]
+      properties:
+        name:
+          type: string
+          example: CI/CD Deploy Key
+        serviceAccountId:
+          type: string
+          example: svc_example1234567890
+        organizationId:
+          type: string
+          example: org_example123
+        scopes:
+          type: array
+          items:
+            type: string
+          example: [users.read, incidents.write]
+        environment:
+          type: string
+          enum: [live, test]
+        expiresAt:
+          type: string
+          format: date-time
+    APIKeyResponse:
+      type: object
+      required: [id, keyId, serviceAccountId, name, prefix, scopes, status, createdAt, createdBy]
+      properties:
+        id:
+          type: string
+        keyId:
+          type: string
+        serviceAccountId:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+          example: hal_live****
+        scopes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, disabled, revoked, expired]
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+    APIKeyCollection:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIKeyResponse"
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    CreateAPIKeyResponse:
+      type: object
+      required: [apiKey, plaintext]
+      properties:
+        apiKey:
+          $ref: "#/components/schemas/APIKeyResponse"
+        plaintext:
+          type: string
+          description: Full API key secret returned only once at creation or rotation.
+          example: hal_live_3Fk8a2b1XyZexampleSecretValue

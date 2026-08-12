@@ -1,0 +1,139 @@
+openapi: 3.1.0
+info:
+  title: Halcyon Audit API
+  version: 1.0.0
+  description: Append-only tenant-scoped audit log query API.
+servers:
+  - url: http://localhost:8083
+paths:
+  /api/v1/audit-events:
+    get:
+      summary: List audit events
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: event_type
+          in: query
+          schema: { type: string }
+        - name: actor_id
+          in: query
+          schema: { type: string }
+        - name: actor_type
+          in: query
+          schema: { type: string, enum: [USER, SERVICE, API_KEY, SYSTEM, ANONYMOUS] }
+        - name: target_type
+          in: query
+          schema: { type: string }
+        - name: target_id
+          in: query
+          schema: { type: string }
+        - name: result
+          in: query
+          schema: { type: string, enum: [SUCCESS, FAILURE, DENIED] }
+        - name: start_time
+          in: query
+          schema: { type: string, format: date-time }
+        - name: end_time
+          in: query
+          schema: { type: string, format: date-time }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: organization_id
+          in: query
+          description: Platform administrators only; requires audit.read.platform
+          schema: { type: string }
+      responses:
+        '200':
+          description: Audit event page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/audit-events/{audit_event_id}:
+    get:
+      summary: Get audit event
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: audit_event_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Audit event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Authentication required
+    Forbidden:
+      description: Insufficient permissions (audit.read, audit.read.security)
+    BadRequest:
+      description: Invalid filter or cursor
+    NotFound:
+      description: Audit event not found
+    RateLimited:
+      description: Rate limit exceeded
+  schemas:
+    AuditEventList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string }
+        event_type: { type: string }
+        action: { type: string }
+        actor:
+          type: object
+          properties:
+            type: { type: string }
+            id: { type: string }
+        target:
+          type: object
+          properties:
+            type: { type: string }
+            id: { type: string }
+        result: { type: string }
+        occurred_at: { type: string, format: date-time }
+        request_id: { type: string }
+        correlation_id: { type: string }
+        source_service: { type: string }
+        metadata:
+          type: object
+          additionalProperties: { type: string }

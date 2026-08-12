@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS dead_letter_jobs;
+DROP TABLE IF EXISTS job_attempts;
+DROP TABLE IF EXISTS jobs;

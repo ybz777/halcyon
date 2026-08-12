@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_api_keys_service_account_created_id;

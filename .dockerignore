@@ -1,0 +1,49 @@
+# Reduce Docker build context size.
+.git
+.github
+**/.git
+**/.github
+
+# Local artifacts
+bin/
+**/bin/
+coverage*.out
+**/*coverage*.out
+*.log
+tmp/
+temp/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Tests (not required for production images)
+**/*_test.go
+tests/
+**/testdata/
+
+# Documentation (not required for builds)
+docs/
+*.md
+!services/**/README.md
+
+# Frontend / tooling not used by Go services
+apps/
+node_modules/
+**/node_modules/
+
+# Credentials — never include in build context
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/credentials.json
+
+# Profiling and debug
+**/*.prof
+**/*.trace
+scripts/perf/

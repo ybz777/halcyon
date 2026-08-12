@@ -1,0 +1,282 @@
+openapi: 3.1.0
+info:
+  title: Halcyon Organization API
+  version: 1.0.0
+  description: Multi-tenant organization, membership, invitation, and RBAC APIs.
+servers:
+  - url: http://localhost:8081
+paths:
+  /api/v1/organizations:
+    post:
+      summary: Create organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Idempotency conflict or in-progress
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/organizations/{organization_id}:
+    get:
+      summary: Get organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      summary: Update organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationRequest'
+      responses:
+        '200':
+          description: Updated organization
+    delete:
+      summary: Soft-delete organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+      responses:
+        '204':
+          description: Deleted
+  /api/v1/organizations/{organization_id}/members:
+    get:
+      summary: List members
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Member page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberCollection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/organizations/{organization_id}/members/{user_id}:
+    patch:
+      summary: Update member role or status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Updated member
+    delete:
+      summary: Remove member
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Removed
+  /api/v1/organizations/{organization_id}/invitations:
+    post:
+      summary: Create invitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+      responses:
+        '201':
+          description: Invitation created
+    get:
+      summary: List invitations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Invitation page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCollection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/organizations/{organization_id}/invitations/{id}:
+    delete:
+      summary: Revoke invitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Revoked
+  /api/v1/invitations/{token}/accept:
+    post:
+      summary: Accept invitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Membership created
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    OrganizationID:
+      name: organization_id
+      in: path
+      required: true
+      schema:
+        type: string
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+  schemas:
+    CreateOrganizationRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    UpdateOrganizationRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    Organization:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [active, suspended, deleted] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CollectionMeta:
+      type: object
+      properties:
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+    MemberCollection:
+      allOf:
+        - $ref: '#/components/schemas/CollectionMeta'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+    InvitationCollection:
+      allOf:
+        - $ref: '#/components/schemas/CollectionMeta'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+    ProblemDetails:
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    BadRequest:
+      description: Invalid cursor or page size
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'

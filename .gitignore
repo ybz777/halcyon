@@ -1,0 +1,50 @@
+# Binaries
+/bin/
+/dist/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+infra/data/
+
+# Terraform (future)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Node (future frontend)
+node_modules/
+.next/
+out/
+apps/web/dist/
+apps/web/.env.local
+apps/web/.env.development.local
+scripts/.demo-state.json
+
+# Logs
+*.log

@@ -1,0 +1,339 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  GO_VERSION: "1.25.x"
+  GOLANGCI_LINT_VERSION: "v1.62.2"
+  APP_ENV: test
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      docker: ${{ steps.filter.outputs.docker }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.work'
+              - 'go.work.sum'
+              - '**/go.mod'
+              - '**/go.sum'
+              - 'Makefile'
+              - 'scripts/**'
+            docker:
+              - '**/Dockerfile'
+              - 'infra/docker/**'
+              - 'go.work'
+              - '**/go.mod'
+            contracts:
+              - 'contracts/**'
+            workflows:
+              - '.github/workflows/**'
+
+  quick-checks:
+    name: Format, Tidy, Vet
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.workflows == 'true'
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: Format check
+        run: bash scripts/ci/fmt-check.sh
+      - name: Dependency consistency
+        run: bash scripts/ci/tidy-check.sh
+      - name: Go vet
+        run: |
+          while IFS= read -r mod; do
+            echo "vet $mod"
+            (cd "$mod" && go vet ./...)
+          done < <(bash scripts/ci/list-go-modules.sh)
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    needs: quick-checks
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --config .golangci.yml
+          only-new-issues: false
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: quick-checks
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: Run unit tests
+        run: make test
+      - name: Coverage
+        run: make coverage
+      - name: Coverage summary
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          for f in pkg/platform/coverage-platform.out services/auth/coverage-auth.out services/organization/coverage-organization.out services/workflow/coverage-workflow.out; do
+            if [ -f "$f" ]; then
+              echo "### $f" >> "$GITHUB_STEP_SUMMARY"
+              go tool cover -func="$f" | tail -1 >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            pkg/platform/coverage-*.out
+            services/**/coverage-*.out
+          retention-days: 14
+
+  race-test:
+    name: Race Detector
+    runs-on: ubuntu-latest
+    needs: quick-checks
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: Race tests
+        run: make test-race
+
+  contracts:
+    name: OpenAPI Validation
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.workflows == 'true'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Validate OpenAPI contracts
+        run: make validate-openapi
+
+  migrations:
+    name: Migration Validation
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.workflows == 'true'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate migrations
+        run: make validate-migrations
+
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.workflows == 'true'
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: govulncheck
+        run: make security-vuln
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, unit-test, race-test, contracts, migrations, security]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: Build all modules
+        run: make build
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: halcyon
+          POSTGRES_PASSWORD: halcyon
+          POSTGRES_DB: halcyon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U halcyon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redpanda:
+        image: redpandadata/redpanda:v24.2.4
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q Healthy"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://halcyon:halcyon@localhost:5432/halcyon_test?sslmode=disable
+      ORGANIZATION_DATABASE_URL: postgres://halcyon:halcyon@localhost:5432/halcyon_organization_test?sslmode=disable
+      WORKFLOW_DATABASE_URL: postgres://halcyon:halcyon@localhost:5432/halcyon_workflow_test?sslmode=disable
+      JOBS_DATABASE_URL: postgres://halcyon:halcyon@localhost:5432/halcyon_jobs_test?sslmode=disable
+      REDIS_URL: redis://localhost:6379/0
+      KAFKA_BROKERS: localhost:9092
+      JWT_SECRET: ci-test-jwt-secret-with-at-least-32-characters
+      APP_ENV: test
+      OTEL_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+      - name: Create test databases
+        run: |
+          PGPASSWORD=halcyon psql -h localhost -U halcyon -d halcyon -c "CREATE DATABASE halcyon_test;"
+          PGPASSWORD=halcyon psql -h localhost -U halcyon -d halcyon -c "CREATE DATABASE halcyon_organization_test;"
+          PGPASSWORD=halcyon psql -h localhost -U halcyon -d halcyon -c "CREATE DATABASE halcyon_workflow_test;"
+          PGPASSWORD=halcyon psql -h localhost -U halcyon -d halcyon -c "CREATE DATABASE halcyon_jobs_test;"
+      - name: Run integration tests
+        run: make test-integration
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: integration-failure-logs
+          path: |
+            **/*integration*.log
+          retention-days: 7
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: auth
+            file: services/auth/Dockerfile
+          - name: gateway
+            file: services/gateway/Dockerfile
+          - name: organization
+            file: services/organization/Dockerfile
+          - name: workflow
+            file: services/workflow/Dockerfile
+          - name: audit
+            file: services/audit/Dockerfile
+          - name: integrations
+            file: services/integrations/Dockerfile
+          - name: notifications
+            file: services/notifications/Dockerfile
+          - name: jobs
+            file: services/jobs/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          tags: halcyon/${{ matrix.name }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy scan (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: halcyon/${{ matrix.name }}:ci
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true

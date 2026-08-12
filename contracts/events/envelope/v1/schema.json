@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://halcyon.io/schemas/events/envelope/v1",
+  "title": "Halcyon Event Envelope",
+  "description": "Required wrapper for all Halcyon Kafka events. See EVENT_GUIDELINES.md.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_version",
+    "timestamp",
+    "source",
+    "org_id",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^evt_",
+      "description": "Unique event identifier for idempotent consumption"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z_]+\\.[a-z_]+$",
+      "description": "Domain event name: domain.aggregate.verb (e.g. incidents.incident.created)"
+    },
+    "event_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Schema version (e.g. 1.0)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp with millisecond precision"
+    },
+    "source": {
+      "type": "string",
+      "description": "Originating service name (e.g. workflow, auth)"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Links related events across a business operation"
+    },
+    "causation_id": {
+      "type": "string",
+      "description": "event_id of the event that caused this event"
+    },
+    "org_id": {
+      "type": "string",
+      "pattern": "^org_",
+      "description": "Tenant identifier — required for partition key and isolation"
+    },
+    "actor": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["user", "system", "api_key", "integration"]
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "trace_id": { "type": "string" },
+        "span_id": { "type": "string" },
+        "idempotency_key": { "type": "string" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "description": "Domain-specific event data — validated by per-type schema"
+    }
+  }
+}

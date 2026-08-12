@@ -1,0 +1,181 @@
+openapi: 3.1.0
+
+info:
+
+  title: Halcyon API Gateway
+
+  version: 1.0.0
+
+  description: External API entry point proxying to internal Halcyon services.
+
+servers:
+
+  - url: http://localhost:8088
+
+paths:
+
+  /api/v1/health:
+
+    get:
+
+      summary: Gateway liveness
+
+      responses:
+
+        '200':
+
+          description: Healthy
+
+  /api/v1/ready:
+
+    get:
+
+      summary: Gateway readiness
+
+      responses:
+
+        '200':
+
+          description: Ready
+
+        '503':
+
+          description: Dependency unavailable
+
+  /api/v1/auth/login:
+
+    post:
+
+      summary: Proxied login
+
+      responses:
+
+        '200':
+
+          description: Success
+
+        '401':
+
+          $ref: '#/components/responses/Unauthorized'
+
+        '413':
+
+          $ref: '#/components/responses/PayloadTooLarge'
+
+        '429':
+
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/refresh:
+
+  /api/v1/organizations:
+
+  /api/v1/audit-events:
+
+  /api/v1/invitations/{token}/accept:
+
+    description: Proxied to internal services. See auth, organization, and audit OpenAPI contracts.
+
+components:
+
+  headers:
+
+    X-Request-ID:
+
+      description: Unique HTTP request identifier (generated or validated).
+
+      schema:
+
+        type: string
+
+    X-Correlation-ID:
+
+      description: Logical workflow correlation identifier.
+
+      schema:
+
+        type: string
+
+    Retry-After:
+
+      description: Seconds until rate limit resets.
+
+      schema:
+
+        type: integer
+
+    X-RateLimit-Remaining:
+
+      description: Remaining requests in the current window when exposed.
+
+      schema:
+
+        type: integer
+
+  responses:
+
+    Unauthorized:
+
+      description: Missing or invalid authentication
+
+      content:
+
+        application/problem+json:
+
+          schema:
+
+            $ref: '#/components/schemas/ProblemDetails'
+
+    PayloadTooLarge:
+
+      description: Request body exceeds configured maximum size
+
+      content:
+
+        application/problem+json:
+
+          schema:
+
+            $ref: '#/components/schemas/ProblemDetails'
+
+    RateLimited:
+
+      description: Rate limit exceeded
+
+      headers:
+
+        Retry-After:
+
+          $ref: '#/components/headers/Retry-After'
+
+        X-RateLimit-Remaining:
+
+          $ref: '#/components/headers/X-RateLimit-Remaining'
+
+      content:
+
+        application/problem+json:
+
+          schema:
+
+            $ref: '#/components/schemas/ProblemDetails'
+
+  schemas:
+
+    ProblemDetails:
+
+      type: object
+
+      properties:
+
+        type: { type: string }
+
+        title: { type: string }
+
+        status: { type: integer }
+
+        detail: { type: string }
+
+        instance: { type: string }
+
+

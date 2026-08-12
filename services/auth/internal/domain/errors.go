@@ -1,0 +1,40 @@
+package domain
+
+import "errors"
+
+var (
+	ErrInvalidUserID       = errors.New("invalid user id")
+	ErrInvalidEmail        = errors.New("invalid email")
+	ErrInvalidPasswordHash = errors.New("invalid password hash")
+	ErrInvalidUserStatus   = errors.New("invalid user status")
+	ErrInvalidTimestamp    = errors.New("invalid timestamp")
+	ErrInvalidVersion      = errors.New("invalid version")
+	ErrUserDisabled        = errors.New("user is disabled")
+	ErrEmailUnchanged      = errors.New("email is unchanged")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrUserAlreadyExists   = errors.New("user already exists")
+	ErrVersionConflict     = errors.New("optimistic lock version conflict")
+
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidAccessToken  = errors.New("invalid access token")
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	ErrTokenExpired        = errors.New("token expired")
+	ErrRefreshTokenReused  = errors.New("refresh token reused")
+	ErrRefreshTokenRevoked = errors.New("refresh token revoked")
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrForbidden           = errors.New("forbidden")
+	ErrInvalidRole         = errors.New("invalid role")
+	ErrInvalidPermission   = errors.New("invalid permission")
+
+	ErrInvalidAPIKey           = errors.New("invalid api key")
+	ErrInvalidAPIScope         = errors.New("invalid api scope")
+	ErrInvalidServiceAccount   = errors.New("invalid service account")
+	ErrInvalidOrganizationID   = errors.New("invalid organization id")
+	ErrAPIKeyNotFound          = errors.New("api key not found")
+	ErrAPIKeyRevoked           = errors.New("api key revoked")
+	ErrAPIKeyDisabled          = errors.New("api key disabled")
+	ErrAPIKeyExpired           = errors.New("api key expired")
+	ErrServiceAccountDisabled  = errors.New("service account disabled")
+	ErrServiceAccountNotFound  = errors.New("service account not found")
+	ErrInvalidCursor           = errors.New("invalid cursor")
+)

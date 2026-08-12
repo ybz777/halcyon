@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package halcyon.events.v1;
+
+option go_package = "github.com/halcyon-io/halcyon/pkg/platform/events;events";
+
+import "google/protobuf/timestamp.proto";
+
+message Envelope {
+  string event_id = 1;
+  string event_type = 2;
+  string event_version = 3;
+  string aggregate_id = 4;
+  string aggregate_type = 5;
+  string organization_id = 6;
+  string correlation_id = 7;
+  string causation_id = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+  string producer = 10;
+  bytes payload = 11;
+  string trace_id = 12;
+  string span_id = 13;
+}
+
+message UserRegisteredPayload {
+  string user_id = 1;
+  string email = 2;
+}
+
+message UserLoggedInPayload {
+  string user_id = 1;
+  string email = 2;
+}
+
+message OrganizationCreatedPayload {
+  string organization_id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+message MemberInvitedPayload {
+  string organization_id = 1;
+  string user_id = 2;
+  string role = 3;
+}
+
+message MemberJoinedPayload {
+  string organization_id = 1;
+  string user_id = 2;
+  string role = 3;
+}

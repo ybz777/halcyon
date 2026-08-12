@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Halcyon Integrations API
+  version: 1.0.0
+  description: Webhook endpoints and delivery status for external integrations.
+servers:
+  - url: http://localhost:8084
+paths:
+  /api/v1/webhook-endpoints:
+    post:
+      summary: Create webhook endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, subscribed_events]
+              properties:
+                url: { type: string, format: uri }
+                description: { type: string }
+                subscribed_events:
+                  type: array
+                  items: { type: string }
+      responses:
+        '201':
+          description: Endpoint created; signing secret returned once
+        '400':
+          description: Invalid idempotency key
+        '409':
+          description: Idempotency conflict or in-progress
+    get:
+      summary: List webhook endpoints
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Endpoint page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionPage'
+        '400':
+          description: Invalid cursor or page size
+  /api/v1/webhook-endpoints/{id}:
+    get:
+      summary: Get webhook endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Endpoint metadata (no secret)
+    patch:
+      summary: Update webhook endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Updated endpoint
+  /api/v1/webhook-endpoints/{id}/enable:
+    post:
+      summary: Enable webhook endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Endpoint enabled
+  /api/v1/webhook-endpoints/{id}/disable:
+    post:
+      summary: Disable webhook endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Endpoint disabled
+  /api/v1/webhook-endpoints/{id}/test:
+    post:
+      summary: Send test webhook delivery
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Test delivery result
+  /api/v1/webhook-endpoints/{id}/deliveries:
+    get:
+      summary: List deliveries for endpoint
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Delivery page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionPage'
+        '400':
+          description: Invalid cursor or page size
+  /api/v1/webhook-deliveries/{delivery_id}:
+    get:
+      summary: Get webhook delivery
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: delivery_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Delivery status
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Bearer hal_live_<key> API key"
+  schemas:
+    CollectionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean

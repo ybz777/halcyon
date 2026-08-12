@@ -1,0 +1,48 @@
+# Halcyon CODEOWNERS
+#
+# Why: Ensures the right reviewers are automatically requested for sensitive paths.
+# Who: GitHub uses this on every PR to assign reviewers.
+# Standard: Changes to owned paths require approval from listed owners before merge.
+#
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for the entire repository
+*                                   @halcyon-io/core
+
+# Constitution and governance (require maintainer review)
+/README.md                          @halcyon-io/core
+/ARCHITECTURE.md                    @halcyon-io/architecture
+/SYSTEM_DESIGN.md                   @halcyon-io/architecture
+/CONTRIBUTING.md                    @halcyon-io/core
+/SECURITY.md                        @halcyon-io/security
+/RELEASE_PROCESS.md                 @halcyon-io/core
+/ROADMAP.md                         @halcyon-io/core
+
+# Contracts (schema changes affect all consumers)
+/contracts/                         @halcyon-io/architecture @halcyon-io/core
+
+# ADRs and RFCs
+/docs/adr/                          @halcyon-io/architecture
+/docs/rfc/                          @halcyon-io/architecture
+
+# Security documentation and threat model
+/docs/security/                     @halcyon-io/security
+
+# Platform shared libraries (high blast radius)
+/pkg/platform/                      @halcyon-io/platform
+
+# Infrastructure and deployment
+/infra/                             @halcyon-io/infra
+/deploy/                            @halcyon-io/infra
+
+# CI/CD workflows
+/.github/workflows/                 @halcyon-io/infra @halcyon-io/core
+
+# Service ownership (update as team grows)
+/services/auth/                     @halcyon-io/platform
+/services/gateway/                  @halcyon-io/platform
+/services/ingestion/                @halcyon-io/ingestion
+/services/correlation/              @halcyon-io/ingestion
+/services/workflow/                 @halcyon-io/workflow
+/services/ai/                       @halcyon-io/ai @halcyon-io/security
+/services/audit/                    @halcyon-io/security
