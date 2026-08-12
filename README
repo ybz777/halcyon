@@ -1,0 +1,80 @@
+# Halcyon
+
+### Full-Stack Enterprise Platform for Authentication, Organizations, RBAC, API Keys, Audit Logging, Workflows, Notifications, and Integrations
+
+Halcyon is a full-stack enterprise platform designed around secure identity, organization management, role-based access control, API key management, auditability, workflows, notifications, and service integrations.
+
+The project combines a Go-based backend platform with a React/TypeScript web console and a containerized infrastructure stack.
+
+---
+
+## Overview
+
+Halcyon is structured as a modular backend platform with independently deployable services communicating through well-defined APIs and event-driven infrastructure.
+
+The platform provides the foundation for enterprise applications that require:
+
+- Authentication and authorization
+- Organization and tenant management
+- Role-based access control (RBAC)
+- Service accounts
+- API key management
+- Audit events
+- Notifications
+- Workflow execution
+- Background jobs
+- Webhooks
+- Third-party integrations
+- Event-driven communication
+- Observability and operational tooling
+
+A React/TypeScript web console provides a customer-facing interface for interacting with the platform.
+
+---
+
+## Architecture
+
+```text
+                         ┌──────────────────────┐
+                         │      Web Console      │
+                         │   React + TypeScript  │
+                         │       Vite            │
+                         └──────────┬───────────┘
+                                    │
+                                    │ REST / JSON
+                                    ▼
+                         ┌──────────────────────┐
+                         │       Gateway        │
+                         │       Go / HTTP      │
+                         │ Authentication/RBAC  │
+                         └──────────┬───────────┘
+                                    │
+             ┌──────────────────────┼──────────────────────┐
+             │                      │                      │
+             ▼                      ▼                      ▼
+      ┌─────────────┐       ┌──────────────┐       ┌──────────────┐
+      │    Auth     │       │ Organization │       │    Audit     │
+      │    :8080    │       │    :8081     │       │    :8083     │
+      └─────────────┘       └──────────────┘       └──────────────┘
+             │                      │                      │
+             └──────────────────────┼──────────────────────┘
+                                    │
+             ┌──────────────────────┼──────────────────────┐
+             │                      │                      │
+             ▼                      ▼                      ▼
+      ┌─────────────┐       ┌──────────────┐       ┌──────────────┐
+      │ Notifications│       │   Workflow   │       │     Jobs     │
+      │    :8085    │       │    :8082     │       │    :8086     │
+      └─────────────┘       └──────────────┘       └──────────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   Event / Worker     │
+                         │      Services        │
+                         └──────────────────────┘
+
+             ┌─────────────────────────────────────────┐
+             │              Infrastructure             │
+             │                                         │
+             │ PostgreSQL │ Redis │ Redpanda │ OTel    │
+             └─────────────────────────────────────────┘
