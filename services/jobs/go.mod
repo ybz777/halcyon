@@ -9,7 +9,7 @@ require (
 	github.com/halcyon-io/halcyon/pkg/platform v0.0.0
 	github.com/halcyon-io/halcyon/services/integrations v0.0.0
 	github.com/halcyon-io/halcyon/services/notifications v0.0.0
-	github.com/jackc/pgx/v5 v5.7.4
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.20.5
 )
 
@@ -45,7 +45,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
